@@ -1,0 +1,68 @@
+#!/bin/bash
+
+echo " ┌┐ ┬ ┬┬  ┬┌─  ┌┬┐┌─┐┬  ┌─┐┌┬┐┌─┐  ┌─┐┌─┐┌─┐┌─┐┌┬┐┌─┐"
+echo " ├┴┐│ ││  ├┴┐   ││├┤ │  ├┤  │ ├┤   ├─┤└─┐└─┐├┤  │ └─┐"
+echo " └─┘└─┘┴─┘┴ ┴  ─┴┘└─┘┴─┘└─┘ ┴ └─┘  ┴ ┴└─┘└─┘└─┘ ┴ └─┘"
+echo " Created by @buscoma"
+echo " Repo https://github.com/buscoma/bulk_delete_assets"
+
+# Need jq to use the script
+if ! command -v jq &> /dev/null
+then
+    echo "> jq is needed to use this script, check out https://stedolan.github.io/jq/"
+    exit 1
+fi
+
+# Ask for some creds to connect to InsightVM service
+read -p " Enter your console URL - ex.[insightvm.yourdomain.com] >> " consolevar
+consolevar=${consolevar:-}
+
+# Check connectivity with the console
+if ping -c 1 $consolevar &> /dev/null
+then
+	read -sp " Username >> " uservar
+	read -sp " Password >> " passvar
+	echo
+	
+	read -p " Enter the name of the group from which you want to delete all assets - ex.[ghost-assets] >> " groupvar
+	groupvar=${groupvar:-ghost-assets}
+	# Check if group exists
+	groupnumber=$(curl -s -X GET -u $uservar:$passvar https://$consolevar/api/3/asset_groups\?name\=$groupvar | jq -rc '.resources[0].id')
+	echo "> The groupnumber is $groupnumber"
+	groupnumber=${groupnumber:-''}
+	if [ -z "$groupnumber" ]
+	then
+		echo "> Group with name '$groupvar' does not exist"
+		exit 0
+	fi
+
+	# Login to retrieve console cookie
+	cookievar=$(curl -s -X $'POST' \
+	    -H $"Host: $consolevar" \
+	    -H $"Accept: application/json" \
+	    --data-binary "nexposeccusername=$uservar&nexposeccpassword=$passvar" \
+	    $"https://$consolevar/data/user/login" | jq -r ".sessionID")
+
+
+	# Get the assets going to be eliminated
+	assetsvar=$(curl -s -u $uservar:$passvar -X GET "https://$consolevar//api/3/asset_groups/$groupnumber/assets" | jq -rc ".resources")
+
+	read -p " Are you sure you want to delete $(echo $assetsvar | jq 'length') assets? [y/n] >> " -n 1 -r
+	echo
+	if [[ $REPLY =~ ^[Yy]$ ]]
+	then
+	    echo "> This may take a while, you might want to grab a coffee meanwhile ☕ ..."
+	    curl -s "https://$consolevar/data/assets/bulk-delete" \
+		-H "nexposeCCSessionID: $cookievar" \
+		-H "Cookie: time-zone-offset=-120; nexposeCCSessionID=$cookievar; i18next=en" \
+		-H "Content-Type: application/json; charset-utf-8" \
+		--data-raw "$assetsvar"
+		echo "> Assets deleted!!"
+	    exit 0
+	fi
+	echo "> Leaving everything as it is"
+	exit 0
+else
+  echo "> Please check conectivity with the console"
+  exit 1
+fi
