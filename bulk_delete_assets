@@ -1,68 +1,154 @@
 #!/bin/bash
-
-echo " ┌┐ ┬ ┬┬  ┬┌─  ┌┬┐┌─┐┬  ┌─┐┌┬┐┌─┐  ┌─┐┌─┐┌─┐┌─┐┌┬┐┌─┐"
-echo " ├┴┐│ ││  ├┴┐   ││├┤ │  ├┤  │ ├┤   ├─┤└─┐└─┐├┤  │ └─┐"
-echo " └─┘└─┘┴─┘┴ ┴  ─┴┘└─┘┴─┘└─┘ ┴ └─┘  ┴ ┴└─┘└─┘└─┘ ┴ └─┘"
-echo " Created by @buscoma"
-echo " Repo https://github.com/buscoma/bulk_delete_assets"
-
-# Need jq to use the script
-if ! command -v jq &> /dev/null
-then
-    echo "> jq is needed to use this script, check out https://stedolan.github.io/jq/"
-    exit 1
-fi
-
-# Ask for some creds to connect to InsightVM service
-read -p " Enter your console URL - ex.[insightvm.yourdomain.com] >> " consolevar
-consolevar=${consolevar:-}
-
-# Check connectivity with the console
-if ping -c 1 $consolevar &> /dev/null
-then
-	read -sp " Username >> " uservar
-	read -sp " Password >> " passvar
+Banner()
+{
+	echo " ┌┐ ┬ ┬┬  ┬┌─  ┌┬┐┌─┐┬  ┌─┐┌┬┐┌─┐  ┌─┐┌─┐┌─┐┌─┐┌┬┐┌─┐"
+	echo " ├┴┐│ ││  ├┴┐   ││├┤ │  ├┤  │ ├┤   ├─┤└─┐└─┐├┤  │ └─┐"
+	echo " └─┘└─┘┴─┘┴ ┴  ─┴┘└─┘┴─┘└─┘ ┴ └─┘  ┴ ┴└─┘└─┘└─┘ ┴ └─┘"
+	echo " Created by @buscoma - amocsub@pm.me"
+	echo " Repo https://github.com/buscoma/bulk_delete_assets"
 	echo
+}
+
+Dependencies()
+{
+	# Need jq to use the script
+	if ! command -v jq &> /dev/null
+	then
+	    echo "> jq is needed to use this script, check out https://stedolan.github.io/jq/"
+	    exit 1
+	fi
+}
+
+Help()
+{
+	echo "Delete assets from an InsightVM console massively from a specified Asset Group"
+	echo
+	echo "USAGE:"
+	echo "	$0 [OPTIONS]"
+	echo
+	echo "OPTIONS:"
+	echo "	-c <insightvm-console>"
+	echo "		Your console URL - ex.[insightvm.yourdomain.com]"
+	echo "	-u <username>"
+	echo "		Username to authenticate with the console"
+	echo "	-p <password>"
+	echo "		Password to authenticate with the console"
+	echo "	-n <asset-group-name>"
+	echo "		Asset group name to be deleted"
+	echo "	-f"
+	echo "		Force the script to run without asking for confirmation"
+	echo "	-h"
+	echo "		Print this help message"
+	echo
+}
+
+
+GetArgs()
+{
+	local OPTIND
+	forcevar=false
+	while getopts ":c:u:p:n:fh" arg; do
+		case $arg in
+			h)
+				Help
+				exit
+				;;
+			c)
+				consolevar=$OPTARG
+				;;
+			u)
+				uservar=$OPTARG
+				;;
+			p)
+				passvar=$OPTARG
+				;;
+			n)
+				groupvar=${OPTARG}
+				;;
+			f)
+				forcevar=true
+				;;
+   	esac
+	done
 	
-	read -p " Enter the name of the group from which you want to delete all assets - ex.[ghost-assets] >> " groupvar
-	groupvar=${groupvar:-ghost-assets}
-	# Check if group exists
-	groupnumber=$(curl -s -X GET -u $uservar:$passvar https://$consolevar/api/3/asset_groups\?name\=$groupvar | jq -rc '.resources[0].id')
-	echo "> The groupnumber is $groupnumber"
-	groupnumber=${groupnumber:-''}
-	if [ -z "$groupnumber" ]
+}
+
+Delete()
+{
+	if [ -z "${consolevar}" ]; then
+    # Ask for some creds to connect to InsightVM service
+		read -p " Enter your console URL - ex.[insightvm.yourdomain.com] >> " consolevar
+		consolevar=${consolevar:-}
+	fi
+	
+	# Check connectivity with the console
+	if ping -c 1 $consolevar &> /dev/null
 	then
-		echo "> Group with name '$groupvar' does not exist"
+		if [ -z "${uservar}" ] || [ -z "${passvar}" ]; then
+			read -sp " Username >> " uservar
+			echo
+			read -sp " Password >> " passvar
+			echo
+		fi
+		
+		if [ -z "${groupvar}" ]; then
+			read -p " Enter the name of the group from which you want to delete all assets - ex.[ghost-assets] >> " groupvar
+			groupvar=${groupvar:-ghost-assets}
+		fi
+		# Check if group exists
+		groupnumber=$(curl -s -X GET -u $uservar:$passvar https://$consolevar/api/3/asset_groups\?name\=$groupvar | awk -F"[,:}]" '{for(i=1;i<=NF;i++){if($i~/'id'\042/){print $(i+1)}}}' | tr -d '"' | tr -d ' ' | sed -n 1p)
+		groupnumber=${groupnumber:-''}
+		if [ -z "$groupnumber" ]
+		then
+			echo "> Group with name '$groupvar' does not exist"
+			exit 0
+		fi
+
+		# Login to retrieve console cookie
+		cookievar=$(curl -s -X $'POST' \
+		    -H $"Host: $consolevar" \
+		    -H $"Accept: application/json" \
+		    --data-binary "nexposeccusername=$uservar&nexposeccpassword=$passvar" \
+		    "https://$consolevar/data/user/login" |  awk -F"[,:}]" '{for(i=1;i<=NF;i++){if($i~/'sessionID'\042/){print $(i+1)}}}' | tr -d '"' | tr -d ' ' | sed -n 1p)
+
+		# Get the assets going to be eliminated
+		# assetsvar=$(curl -s -u $uservar:$passvar -X GET "https://$consolevar//api/3/asset_groups/$groupnumber/assets" | jq -rc ".resources")
+		assetsvar=$(curl -s -u $uservar:$passvar -X GET "https://$consolevar//api/3/asset_groups/$groupnumber/assets" | tr -d '\n'| awk -F'resources\" : ' '{print $2}' | sed -n "s/\}//p")
+		asset_count=$(expr $(echo $assetsvar | wc -w | tr -d ' ') - 2)
+		if [[ $asset_count -lt 0 ]]; then
+			asset_count="0"
+		fi
+		if [ "$forcevar" = false ]; then
+			read -p " Are you sure you want to delete $asset_count assets? [y/n] >> " -n 1 -r
+			echo
+		else
+			REPLY="Y" 
+		fi
+		if [[ $REPLY =~ ^[Yy]$ ]] && [[ $asset_count -gt 0 ]] 
+		then
+		    echo "> This may take a while, you might want to grab a coffee meanwhile ☕ ..."
+		    curl -s "https://$consolevar/data/assets/bulk-delete" \
+			-H "nexposeCCSessionID: $cookievar" \
+			-H "Cookie: time-zone-offset=-120; nexposeCCSessionID=$cookievar; i18next=en" \
+			-H "Content-Type: application/json; charset-utf-8" \
+			--data-raw "$assetsvar"
+			echo "> Assets deleted!!"
+		    exit 0
+		fi
+		echo "> Leaving everything as it is, asset group '$groupvar' have $asset_count assets"
 		exit 0
+	else
+	  echo "> Please check conectivity with the console"
+	  exit 1
 	fi
+}
 
-	# Login to retrieve console cookie
-	cookievar=$(curl -s -X $'POST' \
-	    -H $"Host: $consolevar" \
-	    -H $"Accept: application/json" \
-	    --data-binary "nexposeccusername=$uservar&nexposeccpassword=$passvar" \
-	    $"https://$consolevar/data/user/login" | jq -r ".sessionID")
+Main()
+{	
+	Dependencies
+	Banner
+	GetArgs "$@"
+	Delete
+}
 
-
-	# Get the assets going to be eliminated
-	assetsvar=$(curl -s -u $uservar:$passvar -X GET "https://$consolevar//api/3/asset_groups/$groupnumber/assets" | jq -rc ".resources")
-
-	read -p " Are you sure you want to delete $(echo $assetsvar | jq 'length') assets? [y/n] >> " -n 1 -r
-	echo
-	if [[ $REPLY =~ ^[Yy]$ ]]
-	then
-	    echo "> This may take a while, you might want to grab a coffee meanwhile ☕ ..."
-	    curl -s "https://$consolevar/data/assets/bulk-delete" \
-		-H "nexposeCCSessionID: $cookievar" \
-		-H "Cookie: time-zone-offset=-120; nexposeCCSessionID=$cookievar; i18next=en" \
-		-H "Content-Type: application/json; charset-utf-8" \
-		--data-raw "$assetsvar"
-		echo "> Assets deleted!!"
-	    exit 0
-	fi
-	echo "> Leaving everything as it is"
-	exit 0
-else
-  echo "> Please check conectivity with the console"
-  exit 1
-fi
+Main "$@"
