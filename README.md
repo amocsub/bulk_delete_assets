@@ -6,20 +6,32 @@ The thing is this task became a little tedious and we decided to 'automate' this
 ## Usage
 _Replace the vars inside brackets with your own information_
 ```bash
-./bulk_delete_assets
+./bulk_delete_assets -h
  ┌┐ ┬ ┬┬  ┬┌─  ┌┬┐┌─┐┬  ┌─┐┌┬┐┌─┐  ┌─┐┌─┐┌─┐┌─┐┌┬┐┌─┐
  ├┴┐│ ││  ├┴┐   ││├┤ │  ├┤  │ ├┤   ├─┤└─┐└─┐├┤  │ └─┐
  └─┘└─┘┴─┘┴ ┴  ─┴┘└─┘┴─┘└─┘ ┴ └─┘  ┴ ┴└─┘└─┘└─┘ ┴ └─┘
- Created by @buscoma
+ Created by @buscoma - amocsub@pm.me
  Repo https://github.com/buscoma/bulk_delete_assets
- Enter your console URL - ex.[insightvm.yourdomain.com] >> {{CONSOLE_URL}}
- Username >> {{CONSOLE_USERNAME}}
- Password >> {{CONSOLE_PASSWORD}}
- Enter the name of the group from which you want to delete all assets - ex.[ghost-assets] >> {{GROUP_TO_DELETE}}
-> The groupnumber is 90
- Are you sure you want to delete 750 assets? [y/n] >> {{CONFIRMATION}}
-> This may take a while, you might want to grab a coffee meanwhile ☕ ...
-> Assets deleted!!
+
+Delete assets from an InsightVM console massively from a specified Asset Group
+
+USAGE:
+    ./bulk_delete_assets [OPTIONS]
+
+OPTIONS:
+    -c <insightvm-console>
+        Your console URL - ex.[insightvm.yourdomain.com]
+    -u <username>
+        Username to authenticate with the console
+    -p <password>
+        Password to authenticate with the console
+    -n <asset-group-name>
+        Asset group name to be deleted
+    -f
+        Force the script to run without asking for confirmation
+    -h
+        Print this help message
+
 ```
 
 ## InsightVM Console Cleanup recommendations
